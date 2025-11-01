@@ -1,0 +1,5 @@
+1 Nb couches
+0 3 Numéro de couche, nb segments
+0 0 0 10
+0 30 0 40
+0 20 0 25

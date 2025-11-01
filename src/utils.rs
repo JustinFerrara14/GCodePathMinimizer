@@ -10,6 +10,36 @@ pub struct Segment {
     pub y2: i32,
 }
 
+impl Segment {
+    pub fn length_um(&self) -> f64 {
+        let dx = (self.x2 - self.x1) as f64;
+        let dy = (self.y2 - self.y1) as f64;
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    // Length from the end of self to the start of other
+    pub fn length_with_other(&self, other: &Segment) -> f64 {
+        let dx = (other.x1 - self.x2) as f64;
+        let dy = (other.y1 - self.y2) as f64;
+        (dx * dx + dy * dy).sqrt()
+    }
+
+    pub fn is_equal(&self, other: &Segment) -> bool {
+        (self.x1 == other.x1 && self.y1 == other.y1 && self.x2 == other.x2 && self.y2 == other.y2) ||
+        (self.x1 == other.x2 && self.y1 == other.y2 && self.x2 == other.x1 && self.y2 == other.y1)
+    }
+
+    pub fn reversed(&self) -> Segment {
+        Segment {
+            x1: self.x2,
+            y1: self.y2,
+            x2: self.x1,
+            y2: self.y1,
+        }
+    }
+
+}
+
 #[derive(Debug, Clone)]
 pub struct Layer {
     pub id: usize,
@@ -111,30 +141,67 @@ pub fn parse_gcode_file<P: AsRef<Path>>(path: P) -> io::Result<GCodeData> {
 }
 
 pub fn get_print_time_minutes(gcode: &GCodeData, speed_mm_per_sec: u64) -> f64 {
-    let mut total_length_um: u64 = 0;
+    let mut total_length_um: f64 = 0.0;
+    let mut total_travel_length_um: f64 = 0.0;
+
+    let mut prev_layer_end: Option<Segment> = None;
 
     for layer in &gcode.layers {
+        if layer.segments.is_empty() {
+            continue;
+        }
+
+        // --- Add travel between previous layer end and current layer start ---
+        if let Some(prev) = prev_layer_end {
+            let first = &layer.segments[0];
+            total_travel_length_um += prev.length_with_other(&first);
+        }
+
+        // --- Process all segments within the current layer ---
         let segment_count = layer.segments.len();
         for (i, segment) in layer.segments.iter().enumerate() {
-            let dx = (segment.x2 - segment.x1) as f64;
-            let dy = (segment.y2 - segment.y1) as f64;
-            let length = (dx * dx + dy * dy).sqrt().round() as u64;
+            let length = segment.length_um();
             total_length_um += length;
 
-            // Get the length between two segments (the travel move)
-            if i >= segment_count - 1 {
-                continue;
+            // Travel between segments in the same layer
+            if i < segment_count - 1 {
+                let next_segment = &layer.segments[i + 1];
+                total_travel_length_um += segment.length_with_other(&next_segment);
             }
-
-            let next_segment = &layer.segments[i + 1];
-            let travel_dx = (next_segment.x1 - segment.x2) as f64;
-            let travel_dy = (next_segment.y1 - segment.y2) as f64;
-            let travel_length = (travel_dx * travel_dx + travel_dy * travel_dy).sqrt().round() as u64;
-            total_length_um += travel_length;
         }
+
+        // Save the last endpoint of this layer
+        let last_segment = &layer.segments[segment_count - 1];
+        prev_layer_end = Some(last_segment.clone());
     }
 
     let speed_mm_per_min = speed_mm_per_sec * 60;
-    let total_length_mm = total_length_um / 1000; // Convert microns to mm
-    total_length_mm as f64 / speed_mm_per_min as f64
+    let total_length_mm = (total_length_um + total_travel_length_um) as f64 / 1000.0;
+
+    println!("Total length [mm]: {}", total_length_mm);
+
+    total_length_mm / speed_mm_per_min as f64
+}
+
+pub fn test_gcode_equality(gcode_a: &GCodeData, gcode_b: &GCodeData) -> bool {
+    if gcode_a.num_layers != gcode_b.num_layers {
+        return false;
+    }
+
+    for (layer_a, layer_b) in gcode_a.layers.iter().zip(gcode_b.layers.iter()) {
+        if layer_a.id != layer_b.id || layer_a.segments.len() != layer_b.segments.len() {
+            return false;
+        }
+
+        // Check if all segment of gcode_a are in gcode_b
+        for segment_a in &layer_a.segments {
+            if !layer_b.segments.iter().any(|segment_b| {
+                segment_a.is_equal(segment_b)
+            }) {
+                return false;
+            }
+        }
+    }
+
+    true
 }
