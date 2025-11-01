@@ -26,7 +26,7 @@ fn test_gcode_len(){
     };
 
     // Total length = 10 + 10 + 10 + 10 + 40 + 56.57 = 136.57 mm
-    let time = get_print_time_minutes(&gcode, 1);
+    let time = gcode.get_print_time_minutes(1);
 
     // Allow small floating point error
     let expected_time = 136.569 / 60.0;
@@ -116,13 +116,13 @@ fn test_gcode_equality_function() {
     };
 
     // Equal
-    assert!(test_gcode_equality(&gcode_a, &gcode_a));
-    assert!(test_gcode_equality(&gcode_a, &gcode_a_inverted));
-    assert!(test_gcode_equality(&gcode_a, &gcode_a_other_direction));
-    assert!(test_gcode_equality(&gcode_a_inverted, &gcode_a_other_direction));
+    assert!(gcode_a.test_gcode_equality(&gcode_a));
+    assert!(gcode_a.test_gcode_equality(&gcode_a_inverted));
+    assert!(gcode_a.test_gcode_equality(&gcode_a_other_direction));
+    assert!(gcode_a_inverted.test_gcode_equality(&gcode_a_other_direction));
 
     // Not equal
-    assert!(!test_gcode_equality(&gcode_a, &gcode_a_1_segment));
-    assert!(!test_gcode_equality(&gcode_a, &gcode_a_3_segment));
-    assert!(!test_gcode_equality(&gcode_a, &gcode_b));
+    assert!(!gcode_a.test_gcode_equality(&gcode_a_1_segment));
+    assert!(!gcode_a.test_gcode_equality(&gcode_a_3_segment));
+    assert!(!gcode_a.test_gcode_equality(&gcode_b));
 }

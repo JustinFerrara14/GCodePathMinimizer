@@ -1,7 +1,7 @@
 
 use crate::utils::*;
 
-pub fn minimize_gcode(gcode: &mut GCodeData) -> GCodeData {
+pub fn minimize_gcode(gcode: &mut GCodeData) -> () {
 
     // For each layer
     for i in 0..gcode.layers.len() {
@@ -17,9 +17,8 @@ pub fn minimize_gcode(gcode: &mut GCodeData) -> GCodeData {
                 let mut closest_distance = std::f64::MAX;
 
                 for (i, segment) in gcode.layers[i].segments.iter().enumerate() {
-                    let dx = (segment.x1 - last_segment_prev_layer.x2) as f64;
-                    let dy = (segment.y1 - last_segment_prev_layer.y2) as f64;
-                    let distance = (dx * dx + dy * dy).sqrt();
+                    let distance = last_segment_prev_layer.length_with_other(segment);
+
                     if distance < closest_distance {
                         closest_distance = distance;
                         closest_segment_index = i;
@@ -37,62 +36,42 @@ pub fn minimize_gcode(gcode: &mut GCodeData) -> GCodeData {
 
             // Add the first segment to the ordered list
             ordered_segments.push(first_segment.clone());
-            let mut remaining_segments: Vec<Segment> = gcode.layers[i].segments[2..].to_vec();
-
-            for seg in &remaining_segments {
-                println!("Remaining Segment: ({}, {}) -> ({}, {})", seg.x1, seg.y1, seg.x2, seg.y2);
-            }
+            let mut remaining_segments: Vec<Segment> = gcode.layers[i].segments[1..].to_vec();
 
             while !remaining_segments.is_empty() {
                 let last_segment = ordered_segments.last().unwrap();
                 let mut closest_segment_index = 0;
+                let mut closest_segment_reversed = false;
                 let mut closest_distance = std::f64::MAX;
 
                 for (i, segment) in remaining_segments.iter().enumerate() {
-                    let dx = (segment.x1 - last_segment.x2) as f64;
-                    let dy = (segment.y1 - last_segment.y2) as f64;
-                    let distance = (dx * dx + dy * dy).sqrt();
+                    let distance = last_segment.length_with_other(segment);
+                    let distance_reverse = last_segment.length_with_other(&segment.reversed());
 
-                    /*let dx2 = (segment.x2 - last_segment.x2) as f64;
-                    let dy2 = (segment.y2 - last_segment.y2) as f64;
-                    let distance2 = (dx2 * dx2 + dy2 * dy2).sqrt();
+                    let min_distance = distance.min(distance_reverse);
 
-                    if distance2 < distance {
-                        distance = distance2;
-
-                        // Reverse the segment to minimize distance
-                        remaining_segments[i] = Segment {
-                            x1: segment.x2,
-                            y1: segment.y2,
-                            x2: segment.x1,
-                            y2: segment.y1,
-                        };
-                    }*/
-
-                    if distance < closest_distance {
-                        closest_distance = distance;
+                    if min_distance < closest_distance {
+                        closest_distance = min_distance;
                         closest_segment_index = i;
+                        if distance_reverse < distance {
+                            closest_segment_reversed = true;
+                        }
                     }
                 }
 
                 // Add the closest segment to the ordered list and remove it from remaining
-                ordered_segments.push(remaining_segments.remove(closest_segment_index));
+                let mut next_segment = remaining_segments.remove(closest_segment_index);
+                if closest_segment_reversed {
+                    next_segment = next_segment.reversed();
+                }
+                ordered_segments.push(next_segment);
             }
         } else {
             // Layer has no segments, do nothing
-        }
-
-        // Print the ordered segments for debugging
-        for segment in &ordered_segments {
-            println!("Segment: ({}, {}) -> ({}, {})", segment.x1, segment.y1, segment.x2, segment.y2);
         }
 
         // Replace the layer's segments with the ordered segments
         gcode.layers[i].segments = ordered_segments;
     }
 
-    GCodeData {
-        num_layers: gcode.num_layers,
-        layers: gcode.layers.clone(),
-    }
 }

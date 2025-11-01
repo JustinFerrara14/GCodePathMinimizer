@@ -52,6 +52,83 @@ pub struct GCodeData {
     pub layers: Vec<Layer>,
 }
 
+impl GCodeData {
+    pub fn get_print_time_minutes(&self, speed_mm_per_sec: u64) -> f64 {
+        let mut total_length_um: f64 = 0.0;
+        let mut total_travel_length_um: f64 = 0.0;
+
+        let mut prev_layer_end: Option<Segment> = None;
+
+        for layer in &self.layers {
+            if layer.segments.is_empty() {
+                continue;
+            }
+
+            // --- Add travel between previous layer end and current layer start ---
+            if let Some(prev) = prev_layer_end {
+                let first = &layer.segments[0];
+                total_travel_length_um += prev.length_with_other(&first);
+            }
+
+            // --- Process all segments within the current layer ---
+            let segment_count = layer.segments.len();
+            for (i, segment) in layer.segments.iter().enumerate() {
+                let length = segment.length_um();
+                total_length_um += length;
+
+                // Travel between segments in the same layer
+                if i < segment_count - 1 {
+                    let next_segment = &layer.segments[i + 1];
+                    total_travel_length_um += segment.length_with_other(&next_segment);
+                }
+            }
+
+            // Save the last endpoint of this layer
+            let last_segment = &layer.segments[segment_count - 1];
+            prev_layer_end = Some(last_segment.clone());
+        }
+
+        let speed_mm_per_min = speed_mm_per_sec * 60;
+        let total_length_mm = (total_length_um + total_travel_length_um) as f64 / 1000.0;
+
+        println!("Total length [mm]: {}", total_length_mm);
+
+        total_length_mm / speed_mm_per_min as f64
+    }
+
+    pub fn test_gcode_equality(&self, gcode_b: &GCodeData) -> bool {
+        if self.num_layers != gcode_b.num_layers {
+            return false;
+        }
+
+        for (layer_a, layer_b) in self.layers.iter().zip(gcode_b.layers.iter()) {
+            if layer_a.id != layer_b.id || layer_a.segments.len() != layer_b.segments.len() {
+                return false;
+            }
+
+            // Check if all segment of gcode_a are in gcode_b
+            for segment_a in &layer_a.segments {
+                if !layer_b.segments.iter().any(|segment_b| {
+                    segment_a.is_equal(segment_b)
+                }) {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    pub fn print_gcode(&self, num_layer_to_print: usize, num_segments_to_print: usize) {
+        for layer in self.layers.iter().take(num_layer_to_print) {
+            println!("{} {} Numéro de couche, nb segments", layer.id, layer.segments.len());
+            for segment in layer.segments.iter().take(num_segments_to_print) {
+                println!("{} {} {} {}", segment.x1, segment.y1, segment.x2, segment.y2);
+            }
+        }
+    }
+}
+
 pub fn parse_gcode_file<P: AsRef<Path>>(path: P) -> io::Result<GCodeData> {
     let file = File::open(path)?;
     let reader = io::BufReader::new(file);
@@ -138,70 +215,4 @@ pub fn parse_gcode_file<P: AsRef<Path>>(path: P) -> io::Result<GCodeData> {
     }
 
     Ok(GCodeData { num_layers, layers })
-}
-
-pub fn get_print_time_minutes(gcode: &GCodeData, speed_mm_per_sec: u64) -> f64 {
-    let mut total_length_um: f64 = 0.0;
-    let mut total_travel_length_um: f64 = 0.0;
-
-    let mut prev_layer_end: Option<Segment> = None;
-
-    for layer in &gcode.layers {
-        if layer.segments.is_empty() {
-            continue;
-        }
-
-        // --- Add travel between previous layer end and current layer start ---
-        if let Some(prev) = prev_layer_end {
-            let first = &layer.segments[0];
-            total_travel_length_um += prev.length_with_other(&first);
-        }
-
-        // --- Process all segments within the current layer ---
-        let segment_count = layer.segments.len();
-        for (i, segment) in layer.segments.iter().enumerate() {
-            let length = segment.length_um();
-            total_length_um += length;
-
-            // Travel between segments in the same layer
-            if i < segment_count - 1 {
-                let next_segment = &layer.segments[i + 1];
-                total_travel_length_um += segment.length_with_other(&next_segment);
-            }
-        }
-
-        // Save the last endpoint of this layer
-        let last_segment = &layer.segments[segment_count - 1];
-        prev_layer_end = Some(last_segment.clone());
-    }
-
-    let speed_mm_per_min = speed_mm_per_sec * 60;
-    let total_length_mm = (total_length_um + total_travel_length_um) as f64 / 1000.0;
-
-    println!("Total length [mm]: {}", total_length_mm);
-
-    total_length_mm / speed_mm_per_min as f64
-}
-
-pub fn test_gcode_equality(gcode_a: &GCodeData, gcode_b: &GCodeData) -> bool {
-    if gcode_a.num_layers != gcode_b.num_layers {
-        return false;
-    }
-
-    for (layer_a, layer_b) in gcode_a.layers.iter().zip(gcode_b.layers.iter()) {
-        if layer_a.id != layer_b.id || layer_a.segments.len() != layer_b.segments.len() {
-            return false;
-        }
-
-        // Check if all segment of gcode_a are in gcode_b
-        for segment_a in &layer_a.segments {
-            if !layer_b.segments.iter().any(|segment_b| {
-                segment_a.is_equal(segment_b)
-            }) {
-                return false;
-            }
-        }
-    }
-
-    true
 }
