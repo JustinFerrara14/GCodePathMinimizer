@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 inquire = "0.9.1"
-
+indicatif = "0.18.2"

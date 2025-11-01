@@ -1,7 +1,10 @@
-
+use indicatif::{ProgressBar, ProgressStyle};
 use crate::utils::*;
 
 pub fn minimize_gcode(gcode: &mut GCodeData) -> () {
+
+    // Initialize progress bar
+    let bar = ProgressBar::new(gcode.layers.len() as u64);
 
     // For each layer
     for i in 0..gcode.layers.len() {
@@ -72,6 +75,11 @@ pub fn minimize_gcode(gcode: &mut GCodeData) -> () {
 
         // Replace the layer's segments with the ordered segments
         gcode.layers[i].segments = ordered_segments;
+
+        // Update progress bar
+        bar.inc(1);
     }
 
+    // Finish progress bar
+    bar.finish_with_message("Minimization complete");
 }
