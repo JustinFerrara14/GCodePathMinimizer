@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
+use rayon::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct Segment {
@@ -96,27 +97,26 @@ impl GCodeData {
         total_length_mm / speed_mm_per_min as f64
     }
 
+    // Tests equality of two GCodeData instances using parallel iteration
     pub fn test_gcode_equality(&self, gcode_b: &GCodeData) -> bool {
         if self.num_layers != gcode_b.num_layers {
             return false;
         }
 
-        for (layer_a, layer_b) in self.layers.iter().zip(gcode_b.layers.iter()) {
-            if layer_a.id != layer_b.id || layer_a.segments.len() != layer_b.segments.len() {
-                return false;
-            }
-
-            // Check if all segment of gcode_a are in gcode_b
-            for segment_a in &layer_a.segments {
-                if !layer_b.segments.iter().any(|segment_b| {
-                    segment_a.is_equal(segment_b)
-                }) {
+        self.layers
+            .par_iter() // Parallel iterator
+            .zip(gcode_b.layers.par_iter())
+            .all(|(layer_a, layer_b)| {
+                // All layers must match
+                if layer_a.id != layer_b.id || layer_a.segments.len() != layer_b.segments.len() {
                     return false;
                 }
-            }
-        }
 
-        true
+                // Check if all segments of gcode_a exist in gcode_b
+                layer_a.segments.iter().all(|segment_a| {
+                    layer_b.segments.iter().any(|segment_b| segment_a.is_equal(segment_b))
+                })
+            })
     }
 
     pub fn print_gcode(&self, num_layer_to_print: usize, num_segments_to_print: usize) {
